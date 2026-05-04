@@ -476,45 +476,6 @@ function toggleSidebar() {
 }
 
 // ═══════════════════════════════════════════════════
-//  LOCAL STORAGE (PERSISTENCE)
-// ═══════════════════════════════════════════════════
-const STORAGE_KEY = 'esp32_dashboard_sources_v1';
-
-function saveSources() {
-  const clean = sources.map(s => ({
-    id: s.id,
-    url: s.url,
-    sheetName: s.sheetName,
-    colorIdx: s.colorIdx,
-    open: s.open
-  }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
-}
-
-function loadSources() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
-
-  try {
-    const parsed = JSON.parse(saved);
-
-    sources = parsed.map(s => ({
-      ...s,
-      sheets: [],
-      data: null,
-      error: null
-    }));
-
-    sourceCount = sources.length > 0
-      ? Math.max(...sources.map(s => s.id))
-      : 0;
-
-  } catch (e) {
-    console.warn('Failed to load saved sources');
-  }
-}
-
-// ═══════════════════════════════════════════════════
 //  SOURCE MANAGEMENT
 // ═══════════════════════════════════════════════════
 function addSource(url = '', sheetName = '') {
@@ -530,7 +491,6 @@ function addSource(url = '', sheetName = '') {
     const card = document.getElementById('src-' + id);
     if (card) card.scrollIntoView({ behavior:'smooth', block:'nearest' });
   }, 60);
-  saveSources();
 }
 
 function removeSource(id) {
@@ -538,7 +498,6 @@ function removeSource(id) {
   sources.forEach((s, i) => { s.colorIdx = i % SOURCE_COLORS.length; });
   renderSidebar();
   redrawAllCharts();
-  saveSources();
 }
 
 function clearAllSources() {
@@ -547,7 +506,6 @@ function clearAllSources() {
   sources = [];
   renderSidebar();
   redrawAllCharts();
-  saveSources();
 }
 
 function toggleCard(id) {
@@ -562,22 +520,12 @@ function collapseAll() {
 
 function updateSourceURL(id, val) {
   const s = sources.find(s => s.id === id);
-  if (s) {
-    s.url = val.trim();
-    s.sheets = [];
-    s.sheetName = '';
-    s.data = null;
-    s.error = null;
-    saveSources(); // ✅ ADD
-  }
+  if (s) { s.url = val.trim(); s.sheets = []; s.sheetName = ''; s.data = null; s.error = null; }
 }
 
 function updateSourceSheet(id, val) {
   const s = sources.find(s => s.id === id);
-  if (s) {
-    s.sheetName = val;
-    saveSources(); // ✅ ADD
-  }
+  if (s) s.sheetName = val;
 }
 
 async function loadSheetList(id) {
@@ -678,11 +626,34 @@ function escHtml(s) {
 // ═══════════════════════════════════════════════════
 //  FETCH
 // ═══════════════════════════════════════════════════
-async function fetchJSON(url) {
-  const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-  const res   = await fetch(proxy);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+// Google Apps Script supports JSONP via the &callback= parameter — no proxy needed.
+// We use a dynamic <script> tag which bypasses CORS entirely.
+function fetchJSON(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_cb_' + Math.random().toString(36).slice(2);
+    const script  = document.createElement('script');
+    const timer   = setTimeout(() => {
+      cleanup();
+      reject(new Error('Request timed out after 15s. Check your Web App URL and deployment.'));
+    }, 15000);
+
+    window[cbName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    // Google Apps Script honours the ?callback= param and wraps response in JSONP
+    const sep = url.includes('?') ? '&' : '?';
+    script.src = url + sep + 'callback=' + cbName;
+    script.onerror = () => { cleanup(); reject(new Error('Script load failed — check the URL is correct and deployed as "Anyone" access.')); };
+    document.head.appendChild(script);
+  });
 }
 
 async function fetchAll() {
@@ -954,12 +925,7 @@ function setAutoRefresh(){
 // ═══════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════
-loadSources();
-
-if (sources.length === 0) {
-  addSource();
-}
-
+addSource();
 setAutoRefresh();
 renderSidebar();
 </script>
