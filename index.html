@@ -476,6 +476,45 @@ function toggleSidebar() {
 }
 
 // ═══════════════════════════════════════════════════
+//  LOCAL STORAGE (PERSISTENCE)
+// ═══════════════════════════════════════════════════
+const STORAGE_KEY = 'esp32_dashboard_sources_v1';
+
+function saveSources() {
+  const clean = sources.map(s => ({
+    id: s.id,
+    url: s.url,
+    sheetName: s.sheetName,
+    colorIdx: s.colorIdx,
+    open: s.open
+  }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
+}
+
+function loadSources() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    sources = parsed.map(s => ({
+      ...s,
+      sheets: [],
+      data: null,
+      error: null
+    }));
+
+    sourceCount = sources.length > 0
+      ? Math.max(...sources.map(s => s.id))
+      : 0;
+
+  } catch (e) {
+    console.warn('Failed to load saved sources');
+  }
+}
+
+// ═══════════════════════════════════════════════════
 //  SOURCE MANAGEMENT
 // ═══════════════════════════════════════════════════
 function addSource(url = '', sheetName = '') {
@@ -491,6 +530,7 @@ function addSource(url = '', sheetName = '') {
     const card = document.getElementById('src-' + id);
     if (card) card.scrollIntoView({ behavior:'smooth', block:'nearest' });
   }, 60);
+  saveSources();
 }
 
 function removeSource(id) {
@@ -498,6 +538,7 @@ function removeSource(id) {
   sources.forEach((s, i) => { s.colorIdx = i % SOURCE_COLORS.length; });
   renderSidebar();
   redrawAllCharts();
+  saveSources();
 }
 
 function clearAllSources() {
@@ -506,6 +547,7 @@ function clearAllSources() {
   sources = [];
   renderSidebar();
   redrawAllCharts();
+  saveSources();
 }
 
 function toggleCard(id) {
@@ -520,12 +562,22 @@ function collapseAll() {
 
 function updateSourceURL(id, val) {
   const s = sources.find(s => s.id === id);
-  if (s) { s.url = val.trim(); s.sheets = []; s.sheetName = ''; s.data = null; s.error = null; }
+  if (s) {
+    s.url = val.trim();
+    s.sheets = [];
+    s.sheetName = '';
+    s.data = null;
+    s.error = null;
+    saveSources(); // ✅ ADD
+  }
 }
 
 function updateSourceSheet(id, val) {
   const s = sources.find(s => s.id === id);
-  if (s) s.sheetName = val;
+  if (s) {
+    s.sheetName = val;
+    saveSources(); // ✅ ADD
+  }
 }
 
 async function loadSheetList(id) {
@@ -902,7 +954,12 @@ function setAutoRefresh(){
 // ═══════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════
-addSource();
+loadSources();
+
+if (sources.length === 0) {
+  addSource();
+}
+
 setAutoRefresh();
 renderSidebar();
 </script>
